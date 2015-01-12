@@ -398,6 +398,31 @@ static apr_size_t mod_websocket_read_block(request_rec *r, char *buffer,
                 readbufsiz = bufsiz;
             }
         }
+		//For Event MPM
+		if (rv == 730035){//Non blocking mode
+			core_net_rec *net = r->input_filters->ctx;
+			if (net != 0){
+				apr_pool_t*		pool = 0;
+				apr_pool_create(&pool, r->pool);
+				if (pool != 0){
+					apr_pollfd_t fd = { pool, APR_POLL_SOCKET, APR_POLLIN, 0, { NULL }, 0 };
+					fd.desc.s = net->client_socket;
+					apr_int32_t nrt=0;
+					int status = apr_poll(&fd, 1, &nrt,APR_INT64_MAX); //Poll Socket APR_POLLIN
+					if (status == APR_SUCCESS){
+						if ((rv =
+							ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES,
+							APR_NONBLOCK_READ, bufsiz)) == APR_SUCCESS) {
+							if ((rv =
+								apr_brigade_flatten(bb, buffer, &bufsiz)) == APR_SUCCESS) {
+								readbufsiz = bufsiz;
+							}
+						}
+					}
+					apr_pool_destroy(pool);
+				}				
+			}
+		}
         apr_brigade_destroy(bb);
     }
     return readbufsiz;
